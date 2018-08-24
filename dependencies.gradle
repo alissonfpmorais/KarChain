@@ -1,0 +1,20 @@
+ext {
+    arrow_version = "0.7.3"
+    kotlintest_version = "3.1.8"
+
+    test = [
+            kotlintest_runner: "io.kotlintest:kotlintest-runner-junit5:$kotlintest_version",
+            kotlintest_arrow: "io.kotlintest:kotlintest-assertions-arrow:$kotlintest_version"
+    ]
+
+    arrow = [
+            core: "io.arrow-kt:arrow-core:$arrow_version",
+            syntax: "io.arrow-kt:arrow-syntax:$arrow_version",
+            typeclasses: "io.arrow-kt:arrow-typeclasses:$arrow_version",
+            data: "io.arrow-kt:arrow-data:$arrow_version",
+            instances_core: "io.arrow-kt:arrow-instances-core:$arrow_version",
+            instances_data: "io.arrow-kt:arrow-instances-data:$arrow_version",
+            effects: "io.arrow-kt:arrow-effects:$arrow_version",
+            annotations: "io.arrow-kt:arrow-annotations-processor:$arrow_version"
+    ]
+}
