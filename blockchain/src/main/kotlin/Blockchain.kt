@@ -34,12 +34,12 @@ data class Blockchain<T, U>(val blocks: List<Block<T, U>> = listOf()) {
     }
 
     fun concatBlock(method: String = "SHA-256", block: Block<T, U>): EitherBC<Blockchain<T, U>> {
-        val eValidate: EitherBC<Block<T, U>> = when (blocks.isEmpty()) {
+        val eitherValidate: EitherBC<Block<T, U>> = when (blocks.isEmpty()) {
             true -> NoBlocksError.left()
             false -> validateBlock(method = method, previousBlock = blocks.last(), block = block)
         }
 
-        return eValidate.map { b: Block<T, U> -> copy(blocks = blocks.plus(b)) }
+        return eitherValidate.map { b: Block<T, U> -> copy(blocks = blocks.plus(b)) }
     }
 
     fun getLastBlocks(count: Int): EitherBC<List<Block<T, U>>> = when (blocks.isEmpty()) {
