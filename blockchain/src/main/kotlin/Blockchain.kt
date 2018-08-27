@@ -1,76 +1,72 @@
+import BlockchainError.BlockNotPresentError
+import BlockchainError.HasGenesisError
+import BlockchainError.InvalidBlockError
+import BlockchainError.NoBlocksError
 import arrow.Kind
 import arrow.core.*
 import arrow.effects.typeclasses.Async
-import arrow.typeclasses.bindingCatch
+import arrow.typeclasses.binding
 import java.lang.Integer.min
 
-sealed class BlockchainError : Throwable()
-object UnknownBlockchainError : BlockchainError()
-object HasGenesisError : BlockchainError()
-object NoBlocksError : BlockchainError()
-object InvalidBlockError : BlockchainError()
-object CalculateHashError : BlockchainError()
+typealias EitherBC<T> = Either<BlockchainError, T>
 
-data class Blockchain<T, U>(val blocks: List<Block<T, U>> = listOf())
-
-fun <T, U> Blockchain<T, U>.concatGenesis(block: Block<T, U>): Try<Blockchain<T, U>> = Try {
-    if (blocks.isEmpty()) this.copy(blocks.plus(block))
-    else throw HasGenesisError
-}
-
-fun <T, U> Blockchain<T, U>.concatBlock(method: String = "SHA-256", block: Block<T, U>): Try<Blockchain<T, U>> = Try {
-    if (blocks.isEmpty()) throw NoBlocksError
-    else when (validateBlock(method = method, previousBlock = blocks.last(), block = block)) {
-        is Failure -> throw InvalidBlockError
-        is Success -> this.copy(blocks.plus(block))
+data class Blockchain<T, U>(val blocks: List<Block<T, U>> = listOf()) {
+    fun concatGenesis(block: Block<T, U>): EitherBC<Blockchain<T, U>> = when {
+        blocks.isEmpty() -> copy(blocks = blocks.plus(block)).right()
+        else -> HasGenesisError.left()
     }
-}
 
-fun <T, U> Blockchain<T, U>.validateBlock(method: String = "SHA-256", previousBlock: Block<T, U>, block: Block<T, U>): Try<Boolean> = Try
-        .monadError().bindingCatch {
-            if (blocks.indexOf(previousBlock) < 0 || block.previousHash != previousBlock.hash) throw InvalidBlockError
-            else {
+    fun validateBlock(method: String = "SHA-256", previousBlock: Block<T, U>, block: Block<T, U>): EitherBC<Block<T, U>> {
+        val eitherCalc: EitherBC<String> = when (blocks.indexOf(previousBlock) < 0) {
+            true -> BlockNotPresentError.left()
+            false -> {
                 val name = block.name
                 val data = block.data
-                val attemptToHash: Try<String> = calcBlockHash(method = method, previousBlock = previousBlock, name = name, data = data)
-
-                when (attemptToHash) {
-                    is Failure -> throw attemptToHash.exception
-                    is Success -> if (attemptToHash.value != block.hash) throw InvalidBlockError else true
-                }
+                calcBlockHash(method = method, previousBlock = previousBlock, name = name, data = data)
             }
         }
-        .fix()
 
-fun <T, U> Blockchain<T, U>.getLastBlocks(count: Int): Try<List<Block<T, U>>> = Try {
-    if (blocks.isEmpty()) throw NoBlocksError
-    else blocks.subList(blocks.size - min(blocks.size, count), blocks.size)
-}
-
-fun <T, U> Blockchain<T, U>.getLastBlock(): Try<Block<T, U>> = getLastBlocks(1)
-        .map { blocks -> blocks.last() }
-
-fun <T, U> Blockchain<T, U>.calcNextBlockHash(method: String = "SHA-256", name: T, data: U): Try<String> = getLastBlock()
-        .flatMap { lastBlock -> calcBlockHash(method = method, previousBlock = lastBlock, name = name, data = data) }
-
-fun <F, T, U> Blockchain<T, U>.genBlock(method: String = "SHA-256", name: T, data: U, a: Async<F>): Kind<F, Block<T, U>> = a
-        .async { callback: (Either<Throwable, Block<T, U>>) -> Unit -> Try
-                .monadError().bindingCatch {
-                    val lastBlock: Block<T, U> = getLastBlock().bind()
-                    val index: Long = lastBlock.index + 1
-                    val previousHash: String = lastBlock.hash
-                    val hash: String = calcNextBlockHash(method = method, name = name, data = data).bind()
-
-                    Block(index = index, hash = hash, previousHash = previousHash, name = name, data = data)
+        return eitherCalc
+                .flatMap { hash: String ->
+                    if (block.previousHash != previousBlock.hash && hash != block.hash) InvalidBlockError.left()
+                    else block.right()
                 }
-                .fix()
-                .fold(
-                        { error: Throwable ->
-                            when (error) {
-                                is BlockchainError -> callback(error.left())
-                                else -> callback(UnknownBlockchainError.left())
-                            }
-                        },
-                        { block -> callback(block.right()) }
-                )
+    }
+
+    fun concatBlock(method: String = "SHA-256", block: Block<T, U>): EitherBC<Blockchain<T, U>> {
+        val eValidate: EitherBC<Block<T, U>> = when (blocks.isEmpty()) {
+            true -> NoBlocksError.left()
+            false -> validateBlock(method = method, previousBlock = blocks.last(), block = block)
         }
+
+        return eValidate.map { b: Block<T, U> -> copy(blocks = blocks.plus(b)) }
+    }
+
+    fun getLastBlocks(count: Int): EitherBC<List<Block<T, U>>> = when (blocks.isEmpty()) {
+        true -> NoBlocksError.left()
+        false -> blocks.subList(blocks.size - min(blocks.size, count), blocks.size).right()
+    }
+
+    fun getLastBlock(): EitherBC<Block<T, U>> = getLastBlocks(1)
+            .map { subBlocks: List<Block<T, U>> -> subBlocks.last() }
+
+    fun calcNextBlockHash(method: String = "SHA-256", name: T, data: U): EitherBC<String> = getLastBlock()
+            .flatMap { lastBlock -> calcBlockHash(method = method, previousBlock = lastBlock, name = name, data = data) }
+
+    fun <F> genBlock(method: String = "SHA-256", name: T, data: U, a: Async<F>): Kind<F, Block<T, U>> = a
+            .async { callback: (Either<Throwable, Block<T, U>>) -> Unit -> Either
+                    .monadError<BlockchainError>().binding {
+                        val lastBlock: Block<T, U> = getLastBlock().bind()
+                        val index: Long = lastBlock.index + 1
+                        val previousHash: String = lastBlock.hash
+                        val hash: String = calcNextBlockHash(method = method, name = name, data = data).bind()
+
+                        Block(index = index, hash = hash, previousHash = previousHash, name = name, data = data)
+                    }
+                    .fix()
+                    .fold(
+                            { error: BlockchainError -> callback(BlockchainThrowable(error).left()) },
+                            { block -> callback(block.right()) }
+                    )
+            }
+}
