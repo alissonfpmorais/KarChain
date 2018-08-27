@@ -51,7 +51,7 @@ data class Blockchain<T, U>(val blocks: List<Block<T, U>> = listOf()) {
             .map { subBlocks: List<Block<T, U>> -> subBlocks.last() }
 
     fun calcNextBlockHash(method: String = "SHA-256", name: T, data: U): EitherBC<String> = getLastBlock()
-            .flatMap { lastBlock -> calcBlockHash(method = method, previousBlock = lastBlock, name = name, data = data) }
+            .flatMap { lastBlock: Block<T, U> -> calcBlockHash(method = method, previousBlock = lastBlock, name = name, data = data) }
 
     fun <F> genBlock(method: String = "SHA-256", name: T, data: U, a: Async<F>): Kind<F, Block<T, U>> = a
             .async { callback: (Either<Throwable, Block<T, U>>) -> Unit -> Either
@@ -66,7 +66,7 @@ data class Blockchain<T, U>(val blocks: List<Block<T, U>> = listOf()) {
                     .fix()
                     .fold(
                             { error: BlockchainError -> callback(BlockchainThrowable(error).left()) },
-                            { block -> callback(block.right()) }
+                            { block: Block<T, U> -> callback(block.right()) }
                     )
             }
 }
