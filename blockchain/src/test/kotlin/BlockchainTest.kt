@@ -1,14 +1,13 @@
 import arrow.core.*
-import arrow.effects.IO
-import arrow.effects.async
-import arrow.effects.fix
-import arrow.typeclasses.binding
+import arrow.typeclasses.MonadError
+import arrow.typeclasses.bindingCatch
 import io.kotlintest.assertions.arrow.either.shouldBeLeft
 import io.kotlintest.assertions.arrow.either.shouldBeRight
+import io.kotlintest.shouldBe
 import io.kotlintest.specs.StringSpec
 
 class BlockchainTest : StringSpec({
-    val blockchain: Blockchain<String, String> = Blockchain(listOf())
+    val ME: MonadError<EitherPartialOf<Throwable>, Throwable> = Either.monadError()
 
     val genesisName = "author: Alisson Morais"
     val genesisData = "GitHub: github.com/alissonfpmorais"
@@ -25,188 +24,221 @@ class BlockchainTest : StringSpec({
             name = genesisName,
             data = genesisData)
 
+    val blockchain: Either<Throwable, Blockchain<EitherPartialOf<Throwable>, String, String>> =
+            createBlockchain(name = genesisName, data = genesisData, M = ME)
+                    .fix()
+
     "concat genesis in empty blockchain are valid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        newBlockchain.shouldBeRight(Blockchain(listOf(genesisBlock)))
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Either<Throwable, Blockchain<EitherPartialOf<Throwable>, String, String>> = blockchain
+                    .bind()
+                    .concatGenesis(block = genesisBlock)
+                    .fix()
+
+            newBlockchain.shouldBeRight(createBlockchain(name = genesisName, data = genesisData, M = ME).fix())
+        }
     }
 
     "concat genesis in not empty blockchain are invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        newBlockchain.map { bc -> bc.concatGenesis(genesisBlock).shouldBeLeft(HasGenesisError) }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(block = genesisBlock)
+                    .fix()
+                    .bind()
+
+            newBlockchain.concatGenesis(block = genesisBlock)
+                    .fix()
+                    .shouldBeLeft(HasGenesisError)
+        }
     }
 
     "concat regular block in empty blockchain are invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: Either<BlockchainError, Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc
-                        .genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
-
-        val unchangedBlockchain: EitherBC<Blockchain<String, String>> = generatedBlock
-                .flatMap { block -> blockchain.concatBlock(block = block) }
-
-        unchangedBlockchain.shouldBeLeft(NoBlocksError)
+        Either.monadError<Throwable>().bindingCatch {
+            blockchain
+                    .bind()
+                    .concatBlock(block = genesisBlock)
+                    .fix()
+                    .shouldBeLeft(NoBlocksError)
+        }
     }
 
     "concat regular block with different previous hash in not empty blockchain are invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        newBlockchain
-                .flatMap { bc -> bc.concatBlock(block = genesisBlock) }
-                .shouldBeLeft(InvalidBlockError)
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
+
+            newBlockchain.concatBlock(block = genesisBlock)
+                    .fix()
+                    .shouldBeLeft(InvalidBlockError)
+        }
     }
 
     "concat regular block with same previous hash in not empty blockchain are valid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc
-                        .genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        val changedBlockchain: EitherBC<Blockchain<String, String>> = Either
-                .monadError<BlockchainError>().binding {
-                    val block: Block<String, String> = generatedBlock.bind()
-                    val bc: Blockchain<String, String> = newBlockchain.bind()
+            val block: Block<String, String> = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
 
-                    bc.concatBlock(block = block).bind()
-                }
-                .fix()
-
-        val correctBlockchain: EitherBC<Blockchain<String, String>> = generatedBlock
-                .map { block -> Blockchain(listOf(genesisBlock, block)) }
-
-        correctBlockchain.map { bc -> changedBlockchain.shouldBeRight(bc) }
+            newBlockchain.concatBlock(block = block)
+                    .fix()
+                    .shouldBeRight(newBlockchain.copy(blocks = newBlockchain.blocks.plus(block)))
+        }
     }
 
     "validate same blocks in empty blockchain as invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc.genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        generatedBlock.map { block: Block<String, String> ->
-            blockchain.validateBlock(previousBlock = block, block = block).shouldBeLeft(BlockNotPresentError)
+            val block: Block<String, String> = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
+
+            blockchain
+                    .bind()
+                    .validateBlock(previousBlock = block, block = block)
+                    .fix()
+                    .shouldBeLeft(BlockNotPresentError)
         }
     }
 
     "validate actual block and previous block in empty blockchain as invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc.genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        generatedBlock.map { block: Block<String, String> ->
-            blockchain.validateBlock(previousBlock = genesisBlock, block = block).shouldBeLeft(BlockNotPresentError)
+            val block: Block<String, String> = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
+
+            blockchain
+                    .bind()
+                    .validateBlock(previousBlock = genesisBlock, block = block)
+                    .fix()
+                    .shouldBeLeft(BlockNotPresentError)
         }
     }
 
     "validate same blocks and no empty blockchain as invalid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc.genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        newBlockchain.map { bc ->
-            generatedBlock.map { block: Block<String, String> ->
-                bc.validateBlock(previousBlock = block, block = block).shouldBeLeft(BlockNotPresentError)
-            }
+            val block: Block<String, String> = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
+
+            newBlockchain.validateBlock(previousBlock = block, block = block)
+                    .fix()
+                    .shouldBeLeft(BlockNotPresentError)
         }
     }
 
     "validate actual block and previous block in no empty blockchain as valid" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc
-                        .genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        newBlockchain.map { bc ->
-            generatedBlock.map { block: Block<String, String> ->
-                bc.validateBlock(previousBlock = genesisBlock, block = block).shouldBeRight(block)
-            }
+            val block: Block<String, String> = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
+
+            newBlockchain.validateBlock(previousBlock = genesisBlock, block = block)
+                    .fix()
+                    .shouldBeRight(block)
         }
     }
 
     "get last block from empty blockchain" {
-        blockchain
-                .getLastBlock()
-                .shouldBeLeft(NoBlocksError)
+        Either.monadError<Throwable>().bindingCatch {
+            blockchain
+                    .bind()
+                    .getLastBlock()
+                    .fix()
+                    .shouldBeLeft(NoBlocksError)
+        }
     }
 
     "get last block from not empty blockchain" {
-        blockchain
-                .concatGenesis(genesisBlock)
-                .flatMap { bc -> bc.getLastBlock() }
-                .shouldBeRight(genesisBlock)
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
+
+            newBlockchain.getLastBlock()
+                    .fix()
+                    .shouldBeRight(genesisBlock)
+        }
     }
 
     "calculate next block hash from empty blockchain" {
-        blockchain
-                .calcNextBlockHash(name = "AAA-9999", data = "100km")
-                .shouldBeLeft(NoBlocksError)
+        Either.monadError<Throwable>().bindingCatch {
+            blockchain
+                    .bind()
+                    .calcNextBlockHash(name = nextBlockName, data = nextBlockData)
+                    .fix()
+                    .shouldBeLeft(NoBlocksError)
+        }
     }
 
     "calculate next block hash from not empty blockchain" {
-        blockchain
-                .concatGenesis(genesisBlock)
-                .flatMap { bc -> bc.calcNextBlockHash(name = nextBlockName, data = nextBlockData) }
-                .shouldBeRight(nextBlockHash)
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
+
+            newBlockchain.calcNextBlockHash(name = nextBlockName, data = nextBlockData)
+                    .fix()
+                    .shouldBeRight(nextBlockHash)
+        }
     }
 
     "create block in empty blockchain" {
-        val block: EitherBC<Block<String, String>> = blockchain
-                .genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                .fix()
-                .attempt()
-                .unsafeRunSync()
-                .mapLeft { e: Throwable -> e.toBlockchainError() }
-
-        block.shouldBeLeft(NoBlocksError)
+        Either.monadError<Throwable>().bindingCatch {
+            blockchain
+                    .bind()
+                    .genBlock(name = nextBlockName, data = nextBlockData)
+                    .fix()
+                    .shouldBeLeft(NoBlocksError)
+        }
     }
 
     "create block in not empty blockchain" {
-        val newBlockchain: EitherBC<Blockchain<String, String>> = blockchain.concatGenesis(genesisBlock)
-        val generatedBlock: EitherBC<Block<String, String>> = newBlockchain
-                .flatMap { bc -> bc
-                        .genBlock(name = nextBlockName, data = nextBlockData, a = IO.async())
-                        .fix()
-                        .attempt()
-                        .unsafeRunSync()
-                        .mapLeft { e: Throwable -> e.toBlockchainError() }
-                }
+        Either.monadError<Throwable>().bindingCatch {
+            val newBlockchain: Blockchain<EitherPartialOf<Throwable>, String, String> = blockchain
+                    .bind()
+                    .concatGenesis(genesisBlock)
+                    .fix()
+                    .bind()
 
-        val block = Block(
-                index = 2,
-                hash = nextBlockHash,
-                previousHash = genesisHash,
-                timestamp = generatedBlock.getOrElse { genesisBlock }.timestamp,
-                name = "AAA-9999",
-                data = "100km")
+            val block = newBlockchain.genBlock(name = nextBlockName, data = nextBlockData).bind()
+
+            val createdBlock: Block<String, String> = Block(
+                    index = 2,
+                    hash = nextBlockHash,
+                    previousHash = genesisHash,
+                    timestamp = block.timestamp,
+                    name = "AAA-9999",
+                    data = "100km")
 
 
-        generatedBlock.shouldBeRight(block)
+            createdBlock.shouldBe(block)
+        }
     }
 })

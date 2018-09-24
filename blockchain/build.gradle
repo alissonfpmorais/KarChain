@@ -28,6 +28,8 @@ dependencies {
     implementation arrow.instances_data
     implementation arrow.effects
     kapt arrow.annotations
+
+    implementation coroutines.core
 }
 
 compileKotlin {

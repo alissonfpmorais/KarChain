@@ -1,7 +1,6 @@
 import arrow.core.getOrDefault
 import io.kotlintest.assertions.arrow.`try`.shouldBeFailure
 import io.kotlintest.assertions.arrow.`try`.shouldBeSuccess
-import io.kotlintest.assertions.arrow.either.shouldBeLeft
 import io.kotlintest.assertions.arrow.either.shouldBeRight
 import io.kotlintest.specs.StringSpec
 
@@ -32,7 +31,7 @@ class OperationsTest : StringSpec({
     }
 
     "calculate hash based on previous block, name and data" {
-        calcBlockHash(previousBlock = genesisBlock, name = nextBlockName, data = nextBlockData)
+        calcBlockHash(previousHash = genesisBlock.hash, name = nextBlockName, data = nextBlockData)
                 .shouldBeRight(nextBlockHash)
     }
 })

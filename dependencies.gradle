@@ -1,5 +1,6 @@
 ext {
     arrow_version = "0.7.3"
+    coroutines_version = "0.21"
     kotlintest_version = "3.1.8"
 
     test = [
@@ -16,5 +17,9 @@ ext {
             instances_data: "io.arrow-kt:arrow-instances-data:$arrow_version",
             effects: "io.arrow-kt:arrow-effects:$arrow_version",
             annotations: "io.arrow-kt:arrow-annotations-processor:$arrow_version"
+    ]
+
+    coroutines = [
+            core: "org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines_version"
     ]
 }
